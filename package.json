@@ -1,0 +1,23 @@
+﻿{
+  "name": "nagar-seva",
+  "version": "1.0.0",
+  "description": "Nagar Seva Civic Complaint Portal - MERN Stack",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "seed": "npm --prefix server run seed",
+    "install:all": "npm --prefix server install && npm --prefix client install"
+  },
+  "keywords": [
+    "mern",
+    "react",
+    "express",
+    "mongodb",
+    "civic",
+    "complaint"
+  ],
+  "author": "",
+  "license": "ISC"
+}

@@ -28,10 +28,16 @@ export default function Home() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { complaintId, department }
+  const [copied, setCopied] = useState(false);
 
   function handlePhoto(e) {
     const f = e.target.files[0];
     if (!f) return;
+    if (f.size > 8 * 1024 * 1024) {
+      setError("Photo file is too large. Maximum size is 8MB.");
+      return;
+    }
+    setError("");
     setPhoto(f);
     setPhotoPreview(URL.createObjectURL(f));
   }
@@ -87,6 +93,27 @@ export default function Home() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function resetForm() {
+    setResult(null);
+    setCategory("");
+    setDescription("");
+    setName("");
+    setPhone("");
+    setPhoto(null);
+    setPhotoPreview(null);
+    setAddress("");
+    setCoords(null);
+    setError("");
+    setCopied(false);
+  }
+
+  function handleCopy() {
+    if (!result?.complaintId) return;
+    navigator.clipboard.writeText(result.complaintId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
@@ -209,7 +236,7 @@ export default function Home() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full bg-marigold-deep text-ink font-bold py-3 rounded-lg hover:bg-marigold disabled:opacity-60"
+              className="w-full bg-marigold-deep text-ink font-bold py-3 rounded-lg hover:bg-marigold disabled:opacity-60 transition-colors"
             >
               {submitting ? "Submitting..." : "Submit complaint"}
             </button>
@@ -227,19 +254,27 @@ export default function Home() {
             <div className="inline-flex items-center gap-3 bg-teal-50 border border-teal rounded-xl px-5 py-3 mb-6">
               <span className="font-mono font-semibold text-lg">{result.complaintId}</span>
               <button
-                onClick={() => navigator.clipboard.writeText(result.complaintId)}
-                className="bg-teal text-white text-xs px-2.5 py-1 rounded-md"
+                onClick={handleCopy}
+                className="bg-teal text-white text-xs px-2.5 py-1 rounded-md font-semibold hover:bg-teal-700"
               >
-                Copy
+                {copied ? "Copied!" : "Copy"}
               </button>
             </div>
-            <br />
-            <Link to="/track" className="inline-block border border-line px-5 py-2.5 rounded-lg font-semibold text-sm hover:border-ink">
-              Track this complaint →
-            </Link>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Link to={`/track?id=${encodeURIComponent(result.complaintId)}`} className="inline-block bg-ink text-white px-5 py-2.5 rounded-lg font-semibold text-sm hover:bg-ink-soft">
+                Track this complaint →
+              </Link>
+              <button
+                onClick={resetForm}
+                className="inline-block border border-line px-5 py-2.5 rounded-lg font-semibold text-sm hover:border-ink"
+              >
+                File another complaint
+              </button>
+            </div>
           </div>
         )}
       </div>
     </div>
   );
 }
+

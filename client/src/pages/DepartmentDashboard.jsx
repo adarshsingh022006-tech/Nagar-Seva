@@ -5,7 +5,7 @@ import Navbar from "../components/Navbar";
 import StatCard from "../components/StatCard";
 import StatusBadge from "../components/StatusBadge";
 import ResolveModal from "../components/ResolveModal";
-import { fetchComplaints, fetchStats, updateComplaintStatus, resolveComplaint } from "../services/api";
+import { fetchComplaints, fetchStats, updateComplaintStatus, resolveComplaint, getImageUrl } from "../services/api";
 
 export default function DepartmentDashboard() {
   const navigate = useNavigate();
@@ -24,7 +24,13 @@ export default function DepartmentDashboard() {
       navigate("/login");
       return;
     }
-    setUser(JSON.parse(userJson));
+    try {
+      setUser(JSON.parse(userJson));
+    } catch (e) {
+      localStorage.removeItem("nagarseva_token");
+      localStorage.removeItem("nagarseva_user");
+      navigate("/login");
+    }
   }, [navigate]);
 
   const loadData = useCallback(async () => {
@@ -36,6 +42,9 @@ export default function DepartmentDashboard() {
       ]);
       setStats(statsData);
       setComplaints(complaintsData);
+    } catch (err) {
+      console.error("Failed to load dashboard data:", err);
+      showToast(err.response?.data?.message || "Failed to load dashboard data");
     } finally {
       setLoading(false);
     }
@@ -47,7 +56,7 @@ export default function DepartmentDashboard() {
 
   function showToast(msg) {
     setToast(msg);
-    setTimeout(() => setToast(""), 2500);
+    setTimeout(() => setToast(""), 3000);
   }
 
   async function handleStatusChange(id, newStatus) {
@@ -80,7 +89,7 @@ export default function DepartmentDashboard() {
       <Navbar />
       <main className="max-w-6xl mx-auto px-4 py-6">
         <h1 className="font-display text-xl font-semibold mb-4">
-          {user.role === "admin" ? "🏛️ Admin Dashboard — All Departments" : `📋 ${user.department?.name} Dashboard`}
+          {user.role === "admin" ? "🏛️ Admin Dashboard — All Departments" : `📋 ${user.department?.name || "Department"} Dashboard`}
         </h1>
 
         {stats && (
@@ -96,12 +105,13 @@ export default function DepartmentDashboard() {
           <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
             <h3 className="font-semibold text-sm mb-3">By department</h3>
             {stats.byDepartment.map((d) => {
-              const max = Math.max(...stats.byDepartment.map((x) => x.count));
+              const maxCount = Math.max(...stats.byDepartment.map((x) => x.count), 1);
+              const pct = Math.round((d.count / maxCount) * 100);
               return (
                 <div key={d.department} className="flex items-center gap-3 mb-2 text-sm">
-                  <div className="w-48 shrink-0 text-gray-600">{d.department}</div>
+                  <div className="w-48 shrink-0 text-gray-600 truncate">{d.department}</div>
                   <div className="flex-1 bg-gray-100 rounded h-3.5 overflow-hidden">
-                    <div className="bg-teal h-full rounded" style={{ width: `${(d.count / max) * 100}%` }} />
+                    <div className="bg-teal h-full rounded transition-all" style={{ width: `${pct}%` }} />
                   </div>
                   <div className="w-8 text-right font-bold">{d.count}</div>
                 </div>
@@ -116,7 +126,7 @@ export default function DepartmentDashboard() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-line rounded-lg px-2 py-1.5 text-sm"
+              className="border border-line rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-marigold"
             >
               <option value="">All</option>
               <option value="Pending">Pending</option>
@@ -124,8 +134,12 @@ export default function DepartmentDashboard() {
               <option value="Resolved">Resolved</option>
             </select>
           </label>
-          <button onClick={loadData} className="bg-ink text-white px-4 py-1.5 rounded-lg text-sm font-semibold">
-            Refresh
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="bg-ink text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-ink-soft disabled:opacity-60"
+          >
+            {loading ? "Loading..." : "Refresh"}
           </button>
         </div>
 
@@ -148,17 +162,22 @@ export default function DepartmentDashboard() {
             <tbody>
               {complaints.map((c) => (
                 <tr key={c._id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-3 font-mono">{c.complaintId}</td>
+                  <td className="px-3 py-3 font-mono font-semibold">{c.complaintId}</td>
                   <td className="px-3 py-3">
                     {c.photoUrl ? (
-                      <a href={c.photoUrl} target="_blank" rel="noreferrer">
-                        <img src={c.photoUrl} className="w-11 h-11 object-cover rounded-md" />
+                      <a href={getImageUrl(c.photoUrl)} target="_blank" rel="noreferrer">
+                        <img
+                          src={getImageUrl(c.photoUrl)}
+                          alt="Complaint photo"
+                          onError={(e) => { e.target.style.display = "none"; }}
+                          className="w-11 h-11 object-cover rounded-md border border-gray-200"
+                        />
                       </a>
                     ) : (
                       "—"
                     )}
                   </td>
-                  {user.role === "admin" && <td className="px-3 py-3">{c.department?.name}</td>}
+                  {user.role === "admin" && <td className="px-3 py-3">{c.department?.name || "—"}</td>}
                   <td className="px-3 py-3 max-w-[220px]">{c.description}</td>
                   <td className="px-3 py-3">
                     {c.location?.lat ? (
@@ -166,7 +185,7 @@ export default function DepartmentDashboard() {
                         href={`https://www.google.com/maps?q=${c.location.lat},${c.location.lng}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-teal font-semibold"
+                        className="text-teal font-semibold hover:underline"
                       >
                         📍 Map
                       </a>
@@ -186,10 +205,15 @@ export default function DepartmentDashboard() {
                     {c.status === "Resolved" ? (
                       c.resolutionPhotoUrl ? (
                         <div className="text-center">
-                          <a href={c.resolutionPhotoUrl} target="_blank" rel="noreferrer">
-                            <img src={c.resolutionPhotoUrl} className="w-11 h-11 object-cover rounded-md mx-auto" />
+                          <a href={getImageUrl(c.resolutionPhotoUrl)} target="_blank" rel="noreferrer">
+                            <img
+                              src={getImageUrl(c.resolutionPhotoUrl)}
+                              alt="Proof"
+                              onError={(e) => { e.target.style.display = "none"; }}
+                              className="w-11 h-11 object-cover rounded-md mx-auto border border-gray-200"
+                            />
                           </a>
-                          <span className="text-[10px] text-gray-400">by {c.resolvedBy}</span>
+                          <span className="text-[10px] text-gray-400">by {c.resolvedBy || "staff"}</span>
                         </div>
                       ) : (
                         <span className="text-gray-400 text-xs">No proof on file</span>
@@ -204,7 +228,7 @@ export default function DepartmentDashboard() {
                       <select
                         value={c.status}
                         onChange={(e) => handleStatusChange(c._id, e.target.value)}
-                        className="border border-line rounded-lg px-2 py-1 text-xs"
+                        className="border border-line rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-marigold"
                       >
                         <option value="Pending">Pending</option>
                         <option value="In Progress">In Progress</option>
@@ -231,10 +255,11 @@ export default function DepartmentDashboard() {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-ink text-white px-4 py-3 rounded-xl shadow-xl text-sm">
+        <div className="fixed bottom-6 right-6 bg-ink text-white px-4 py-3 rounded-xl shadow-xl text-sm z-50 animate-bounce">
           {toast}
         </div>
       )}
     </div>
   );
 }
+

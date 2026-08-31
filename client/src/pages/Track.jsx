@@ -1,30 +1,44 @@
 // src/pages/Track.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Timeline from "../components/Timeline";
 import StatusBadge from "../components/StatusBadge";
-import { trackComplaint } from "../services/api";
+import { trackComplaint, getImageUrl } from "../services/api";
 
 export default function Track() {
-  const [code, setCode] = useState("");
+  const [searchParams] = useSearchParams();
+  const [code, setCode] = useState(searchParams.get("id") || "");
   const [complaint, setComplaint] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSearch(e) {
-    e?.preventDefault();
-    if (!code.trim()) return;
+  useEffect(() => {
+    const idFromQuery = searchParams.get("id");
+    if (idFromQuery) {
+      setCode(idFromQuery);
+      fetchTracking(idFromQuery);
+    }
+  }, [searchParams]);
+
+  async function fetchTracking(idToSearch) {
+    if (!idToSearch?.trim()) return;
     setLoading(true);
     setError("");
     setComplaint(null);
     try {
-      const data = await trackComplaint(code.trim());
+      const data = await trackComplaint(idToSearch.trim());
       setComplaint(data);
     } catch (err) {
-      setError("No complaint found with that ID. Please check and try again.");
+      setError(err.response?.data?.message || "No complaint found with that ID. Please check and try again.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleSearch(e) {
+    e?.preventDefault();
+    fetchTracking(code);
   }
 
   return (
@@ -39,9 +53,9 @@ export default function Track() {
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="e.g. CMP-20260829-0001"
-              className="flex-1 border border-line rounded-lg px-3 py-2.5 focus:outline-none focus:border-marigold"
+              className="flex-1 border border-line rounded-lg px-3 py-2.5 focus:outline-none focus:border-marigold uppercase"
             />
-            <button type="submit" className="bg-ink text-white px-5 rounded-lg font-semibold hover:bg-ink-soft">
+            <button type="submit" disabled={loading} className="bg-ink text-white px-5 rounded-lg font-semibold hover:bg-ink-soft disabled:opacity-60">
               {loading ? "..." : "Track"}
             </button>
           </form>
@@ -56,14 +70,15 @@ export default function Track() {
                 <div className="mb-5 text-center">
                   <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Proof of fix</div>
                   <img
-                    src={complaint.resolutionPhotoUrl}
+                    src={getImageUrl(complaint.resolutionPhotoUrl)}
                     alt="Proof of fix"
+                    onError={(e) => { e.target.style.display = "none"; }}
                     className="max-h-56 mx-auto rounded-lg border border-line"
                   />
                 </div>
               )}
 
-              <Row label="Complaint ID" value={<span className="font-mono">{complaint.complaintId}</span>} />
+              <Row label="Complaint ID" value={<span className="font-mono font-semibold">{complaint.complaintId}</span>} />
               <Row label="Category" value={complaint.category} />
               <Row label="Department" value={complaint.department?.name || "—"} />
               <Row label="Status" value={<StatusBadge status={complaint.status} />} />
@@ -87,3 +102,4 @@ function Row({ label, value }) {
     </div>
   );
 }
+

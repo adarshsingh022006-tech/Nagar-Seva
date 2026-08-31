@@ -3,12 +3,21 @@ import { Link, useNavigate } from "react-router-dom";
 
 export default function Navbar() {
   const navigate = useNavigate();
-  const userJson = localStorage.getItem("nagarseva_user");
-  const user = userJson ? JSON.parse(userJson) : null;
+  let user = null;
+  try {
+    const userJson = localStorage.getItem("nagarseva_user");
+    if (userJson) user = JSON.parse(userJson);
+  } catch (e) {
+    user = null;
+  }
 
   function logout() {
-    localStorage.removeItem("nagarseva_token");
-    localStorage.removeItem("nagarseva_user");
+    try {
+      localStorage.removeItem("nagarseva_token");
+      localStorage.removeItem("nagarseva_user");
+    } catch (e) {
+      // ignore
+    }
     navigate("/login");
   }
 
@@ -21,18 +30,18 @@ export default function Navbar() {
         Nagar Seva
       </Link>
       <nav className="flex items-center gap-3 md:gap-5 text-sm">
-        {!user && (
+        {!user ? (
           <>
             <Link to="/track" className="opacity-85 hover:opacity-100">Track a complaint</Link>
             <Link to="/login" className="border border-white/30 px-3 py-1.5 rounded-lg hover:bg-white/10">
               Staff login
             </Link>
           </>
-        )}
-        {user && (
+        ) : (
           <>
+            <Link to="/dashboard" className="opacity-85 hover:opacity-100 font-medium">Dashboard</Link>
             <span className="opacity-85 hidden sm:inline">
-              👤 {user.username} {user.role === "admin" ? "(Admin)" : user.department ? `(${user.department.name})` : ""}
+              👤 {user.username} {user.role === "admin" ? "(Admin)" : user.department?.name ? `(${user.department.name})` : ""}
             </span>
             <button
               onClick={logout}
@@ -46,3 +55,4 @@ export default function Navbar() {
     </header>
   );
 }
+

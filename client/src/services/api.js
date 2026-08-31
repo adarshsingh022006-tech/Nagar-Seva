@@ -1,14 +1,42 @@
 // src/services/api.js
-// Central axios instance. Automatically attaches the staff/admin login
-// token (if present) to every request's Authorization header.
+// Central axios instance with dynamic environment configuration.
+// Automatically attaches the staff/admin login token to every request.
 
 import axios from "axios";
 
-const api = axios.create({ baseURL: "https://nagar-seva-api.onrender.com/api" });
+// Normalize API base URL from Vite environment variable or default to proxy path
+const rawBaseUrl = import.meta.env.VITE_API_URL || "";
+export const getBaseURL = () => {
+  if (!rawBaseUrl) return "/api";
+  const trimmed = rawBaseUrl.replace(/\/+$/, "");
+  return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
+};
+
+// Helper to resolve uploaded image URLs across local & deployed environments
+export function getImageUrl(pathOrUrl) {
+  if (!pathOrUrl) return "";
+  if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+    return pathOrUrl;
+  }
+  const cleanPath = pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`;
+  if (!rawBaseUrl) {
+    return cleanPath;
+  }
+  const host = rawBaseUrl.replace(/\/api\/?$/, "").replace(/\/+$/, "");
+  return `${host}${cleanPath}`;
+}
+
+const api = axios.create({
+  baseURL: getBaseURL(),
+});
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("nagarseva_token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  try {
+    const token = localStorage.getItem("nagarseva_token");
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+  } catch (e) {
+    console.error("Error reading token:", e);
+  }
   return config;
 });
 
@@ -17,8 +45,12 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem("nagarseva_token");
-      localStorage.removeItem("nagarseva_user");
+      try {
+        localStorage.removeItem("nagarseva_token");
+        localStorage.removeItem("nagarseva_user");
+      } catch (e) {
+        // ignore
+      }
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
       }
@@ -51,3 +83,4 @@ export const updateComplaintStatus = (id, status) =>
 
 export const resolveComplaint = (id, formData) =>
   api.patch(`/complaints/${id}/resolve`, formData, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data);
+

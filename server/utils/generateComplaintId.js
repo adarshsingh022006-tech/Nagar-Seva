@@ -9,16 +9,25 @@ async function generateComplaintId() {
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
   const datePart = `${y}${m}${d}`;
+  const prefix = `CMP-${datePart}-`;
 
-  const startOfDay = new Date(y, now.getMonth(), now.getDate());
-  const endOfDay = new Date(y, now.getMonth(), now.getDate() + 1);
+  // Find the latest complaint created today with this prefix
+  const latest = await Complaint.findOne({
+    complaintId: { $regex: `^${prefix}` },
+  }).sort({ complaintId: -1 });
 
-  const countToday = await Complaint.countDocuments({
-    createdAt: { $gte: startOfDay, $lt: endOfDay },
-  });
+  let nextNum = 1;
+  if (latest && latest.complaintId) {
+    const parts = latest.complaintId.split("-");
+    const lastSeq = parseInt(parts[2], 10);
+    if (!isNaN(lastSeq)) {
+      nextNum = lastSeq + 1;
+    }
+  }
 
-  const sequence = String(countToday + 1).padStart(4, "0");
-  return `CMP-${datePart}-${sequence}`;
+  const sequence = String(nextNum).padStart(4, "0");
+  return `${prefix}${sequence}`;
 }
 
 module.exports = generateComplaintId;
+
