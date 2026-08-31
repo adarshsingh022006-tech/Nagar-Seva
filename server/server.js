@@ -16,7 +16,9 @@ const app = express();
 // Trust proxy for reverse proxies (Render, Railway, Heroku, Nginx, Cloudflare)
 app.set("trust proxy", 1);
 
-// Auto-seed default departments on first startup if empty
+const User = require("./models/User");
+
+// Auto-seed default departments and demo accounts on startup if missing
 const DEFAULT_DEPARTMENTS = [
   "Water Department",
   "Electricity Department",
@@ -25,26 +27,47 @@ const DEFAULT_DEPARTMENTS = [
   "General/Municipal Department",
 ];
 
-async function ensureDefaultDepartments() {
+const DEMO_ACCOUNTS = [
+  { username: "water_dept", password: "dept123", departmentName: "Water Department" },
+  { username: "electricity_dept", password: "dept123", departmentName: "Electricity Department" },
+  { username: "roads_dept", password: "dept123", departmentName: "Roads & Infrastructure Department" },
+  { username: "sanitation_dept", password: "dept123", departmentName: "Sanitation Department" },
+  { username: "general_dept", password: "dept123", departmentName: "General/Municipal Department" },
+  { username: "admin", password: "admin123", departmentName: null },
+];
+
+async function ensureDefaultData() {
   try {
-    const count = await Department.countDocuments();
-    if (count === 0) {
-      console.log("🌱 Auto-seeding initial department records...");
-      for (const name of DEFAULT_DEPARTMENTS) {
-        await Department.findOneAndUpdate(
-          { name },
-          { name },
-          { upsert: true, new: true }
-        );
-      }
-      console.log("✅ Initial departments seeded successfully.");
+    const departmentDocs = {};
+    for (const name of DEFAULT_DEPARTMENTS) {
+      const dept = await Department.findOneAndUpdate(
+        { name },
+        { name },
+        { upsert: true, new: true }
+      );
+      departmentDocs[name] = dept;
     }
+
+    for (const acc of DEMO_ACCOUNTS) {
+      const existing = await User.findOne({ username: acc.username });
+      if (!existing) {
+        await User.create({
+          username: acc.username,
+          password: acc.password,
+          role: acc.departmentName ? "department" : "admin",
+          department: acc.departmentName ? departmentDocs[acc.departmentName]._id : null,
+        });
+        console.log(`🌱 Auto-created demo account: ${acc.username}`);
+      }
+    }
+    console.log("✅ Initial departments and demo accounts ready.");
   } catch (err) {
-    console.error("⚠️ Failed to auto-seed departments:", err.message);
+    console.error("⚠️ Failed to auto-seed initial data:", err.message);
   }
 }
 
-connectDB().then(ensureDefaultDepartments);
+connectDB().then(ensureDefaultData);
+
 
 // CORS configuration supporting dynamic origin / env var
 const clientOrigins = process.env.CLIENT_ORIGIN
