@@ -3,8 +3,11 @@ import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import CategoryCard from "../components/CategoryCard";
+import InteractiveMap from "../components/InteractiveMap";
+import PublicAlertsBanner from "../components/PublicAlertsBanner";
 import { submitComplaint } from "../services/api";
 import { useLanguage } from "../context/LanguageContext";
+import { detectCategoryFromText } from "../utils/aiCategoryHelper";
 
 const CATEGORIES = [
   { value: "Water Supply", icon: "💧", labelKey: "catWater", defaultLabel: "Water Supply" },
@@ -20,6 +23,7 @@ export default function Home() {
 
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
+  const [aiSuggestion, setAiSuggestion] = useState(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [photo, setPhoto] = useState(null);
@@ -40,12 +44,23 @@ export default function Home() {
 
   const [address, setAddress] = useState("");
   const [coords, setCoords] = useState(null);
+  const [showMap, setShowMap] = useState(false);
   const [locating, setLocating] = useState(false);
   const [locationMsg, setLocationMsg] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [copied, setCopied] = useState(false);
+
+  // AI Category Auto-detection as user types
+  useEffect(() => {
+    const detected = detectCategoryFromText(description);
+    if (detected) {
+      setAiSuggestion(detected);
+    } else {
+      setAiSuggestion(null);
+    }
+  }, [description]);
 
   // Initialize Speech Recognition
   useEffect(() => {
@@ -61,10 +76,7 @@ export default function Home() {
         for (let i = 0; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
         }
-        setDescription((prev) => {
-          // If previous exists and we start fresh, append or replace
-          return transcript;
-        });
+        setDescription(transcript);
       };
 
       recognition.onerror = (event) => {
@@ -127,7 +139,6 @@ export default function Home() {
       timerRef.current = setInterval(() => {
         setRecordingTime((t) => {
           if (t >= 120) {
-            // max 2 minutes
             stopAudioRecording();
             return 120;
           }
@@ -247,6 +258,7 @@ export default function Home() {
   return (
     <div>
       <Navbar />
+      <PublicAlertsBanner />
 
       <section className="bg-ink text-white text-center px-4 sm:px-6 pt-12 pb-14">
         <div className="inline-block bg-white/10 text-marigold text-xs font-bold tracking-widest uppercase px-3 py-1 rounded-full mb-3">
@@ -271,9 +283,21 @@ export default function Home() {
 
             {/* Category Selector */}
             <div className="mb-6">
-              <label className="block text-sm font-semibold text-ink-soft mb-2">
-                {t("categoryLabel", "Category")}
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-semibold text-ink-soft">
+                  {t("categoryLabel", "Category")}
+                </label>
+                {aiSuggestion && !category && (
+                  <button
+                    type="button"
+                    onClick={() => setCategory(aiSuggestion.suggestedCategory)}
+                    className="text-[11px] bg-purple-100 hover:bg-purple-200 text-purple-900 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all animate-bounce"
+                  >
+                    <span>🤖 AI Suggests:</span>
+                    <span>{aiSuggestion.suggestedCategory} (Click to apply)</span>
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
                 {CATEGORIES.map((c) => (
                   <CategoryCard
@@ -392,26 +416,64 @@ export default function Home() {
               </label>
             </div>
 
-            {/* Location */}
+            {/* Location & Interactive Pin Map */}
             <div className="mb-6">
-              <label className="block text-sm font-semibold text-ink-soft mb-2">
-                {t("locationLabel", "Location")}
-              </label>
-              <div className="border border-line rounded-2xl p-4 bg-gray-50/70">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-semibold text-ink-soft">
+                  {t("locationLabel", "Location")}
+                </label>
                 <button
                   type="button"
-                  onClick={useMyLocation}
-                  disabled={locating}
-                  className="inline-flex items-center gap-2 bg-teal text-white px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold hover:bg-teal-700 disabled:opacity-60 transition-colors shadow-sm"
+                  onClick={() => setShowMap(!showMap)}
+                  className="text-xs text-teal font-bold hover:underline flex items-center gap-1"
                 >
-                  📍 {locating ? t("locatingBtn", "Locating...") : t("useLocationBtn", "Use my current location")}
+                  <span>🗺️</span>
+                  <span>{showMap ? "Hide Map" : "Pin Location on Map"}</span>
                 </button>
+              </div>
+
+              <div className="border border-line rounded-2xl p-4 bg-gray-50/70 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={useMyLocation}
+                    disabled={locating}
+                    className="inline-flex items-center gap-2 bg-teal text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold hover:bg-teal-700 disabled:opacity-60 transition-colors shadow-sm"
+                  >
+                    📍 {locating ? t("locatingBtn", "Locating...") : t("useLocationBtn", "Use my current location")}
+                  </button>
+                  {coords && (
+                    <span className="text-xs text-teal font-bold bg-teal-50 px-2.5 py-1.5 rounded-lg border border-teal-200">
+                      ✓ GPS: {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
+                    </span>
+                  )}
+                </div>
+
                 {locationMsg && (
-                  <div className={`text-xs sm:text-sm mt-2 font-medium ${coords ? "text-teal font-semibold" : "text-gray-500"}`}>
+                  <div className={`text-xs mt-1 font-medium ${coords ? "text-teal font-semibold" : "text-gray-500"}`}>
                     {locationMsg}
                   </div>
                 )}
-                <div className="text-center text-xs text-gray-400 my-2.5 font-medium">
+
+                {/* Interactive Leaflet Map for Pin Drop */}
+                {showMap && (
+                  <div className="pt-2">
+                    <div className="text-[11px] text-gray-500 font-semibold mb-1.5">
+                      👉 Click anywhere on the map to drop the exact location pin:
+                    </div>
+                    <InteractiveMap
+                      mode="picker"
+                      selectedCoords={coords}
+                      onSelectCoords={(pos) => {
+                        setCoords(pos);
+                        setLocationMsg(`✅ Map pin selected: ${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}`);
+                      }}
+                      height="240px"
+                    />
+                  </div>
+                )}
+
+                <div className="text-center text-xs text-gray-400 my-1 font-medium">
                   {t("orTypeAddress", "— or type your address —")}
                 </div>
                 <input
@@ -459,7 +521,7 @@ export default function Home() {
               disabled={submitting}
               className="w-full bg-marigold-deep text-ink font-bold py-3.5 rounded-xl hover:bg-marigold disabled:opacity-60 transition-all text-base shadow-md shadow-amber-500/20 active:scale-[0.99]"
             >
-              {submitting ? t("submittingBtn", "Submitting...") : t("submitBtn", "Submit complaint")}
+              {submitting ? t("submittingBtn", "Submitting...") : t("submitBtn", "Submit complaint (+50 Karma)")}
             </button>
           </form>
         ) : (
@@ -474,6 +536,13 @@ export default function Home() {
             <p className="text-gray-600 mb-6 text-sm">
               {t("forwardedTo", "We've forwarded this to")} <strong className="text-ink font-semibold">{result.department}</strong>.
             </p>
+
+            {result.isDuplicateMerged && (
+              <div className="bg-amber-100 border-2 border-amber-300 rounded-2xl p-4 text-xs sm:text-sm text-amber-900 font-bold mb-6">
+                🔥 Similar issue already reported nearby! Your complaint was merged with #{result.complaintId} (Piled: {result.duplicateCount} citizen reports). Urgency boosted!
+              </div>
+            )}
+
             <div className="inline-flex items-center gap-3 bg-teal-50 border-2 border-teal-300 rounded-2xl px-5 py-3 mb-6 shadow-sm">
               <span className="font-mono font-bold text-lg sm:text-xl text-teal-900">{result.complaintId}</span>
               <button
@@ -483,6 +552,11 @@ export default function Home() {
                 {copied ? t("copiedBtn", "Copied!") : t("copyBtn", "Copy")}
               </button>
             </div>
+
+            <div className="text-xs text-amber-800 font-bold mb-6">
+              🎉 You earned <strong>+50 Civic Karma Points</strong> for filing this complaint!
+            </div>
+
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link
                 to={`/track?id=${encodeURIComponent(result.complaintId)}`}
@@ -503,5 +577,6 @@ export default function Home() {
     </div>
   );
 }
+
 
 

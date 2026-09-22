@@ -3,11 +3,15 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useLanguage } from "../context/LanguageContext";
 import SOSModal from "./SOSModal";
+import MyComplaintsModal from "./MyComplaintsModal";
+import LeaderboardModal from "./LeaderboardModal";
 
 export default function Navbar() {
   const navigate = useNavigate();
   const { language, setLanguage, languages, t } = useLanguage();
   const [isSosOpen, setIsSosOpen] = useState(false);
+  const [isMyComplaintsOpen, setIsMyComplaintsOpen] = useState(false);
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
 
   let user = null;
   try {
@@ -37,15 +41,35 @@ export default function Navbar() {
           <span className="hidden xs:inline sm:inline">{t("portalTitle", "Nagar Seva")}</span>
         </Link>
 
-        <nav className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm">
+        <nav className="flex items-center gap-2 sm:gap-3.5 text-xs sm:text-sm">
           {/* Emergency SOS Button */}
           <button
             onClick={() => setIsSosOpen(true)}
-            className="bg-red-600 hover:bg-red-700 text-white font-bold px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs shadow-md shadow-red-600/30 flex items-center gap-1.5 animate-pulse active:scale-95 transition-all"
+            className="bg-red-600 hover:bg-red-700 text-white font-bold px-2.5 sm:px-3 py-1.5 rounded-lg text-xs shadow-md shadow-red-600/30 flex items-center gap-1.5 animate-pulse active:scale-95 transition-all"
             title="Emergency Civic SOS"
           >
             <span>🚨</span>
             <span className="font-extrabold tracking-wide uppercase">{t("sosButton", "SOS")}</span>
+          </button>
+
+          {/* Leaderboard Button */}
+          <button
+            onClick={() => setIsLeaderboardOpen(true)}
+            className="hidden sm:inline-flex items-center gap-1 bg-white/10 hover:bg-white/15 border border-white/20 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+            title="Civic Champions"
+          >
+            <span>🏆</span>
+            <span>Champions</span>
+          </button>
+
+          {/* My Complaints (Phone Lookup) */}
+          <button
+            onClick={() => setIsMyComplaintsOpen(true)}
+            className="inline-flex items-center gap-1 bg-white/10 hover:bg-white/15 border border-white/20 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+            title="My Complaints & Karma"
+          >
+            <span>📱</span>
+            <span>My Complaints</span>
           </button>
 
           {/* Regional Language Switcher */}
@@ -66,8 +90,8 @@ export default function Navbar() {
 
           {!user ? (
             <>
-              <Link to="/track" className="opacity-85 hover:opacity-100 hidden sm:inline">
-                {t("trackComplaint", "Track a complaint")}
+              <Link to="/track" className="opacity-85 hover:opacity-100 hidden md:inline">
+                {t("trackComplaint", "Track")}
               </Link>
               <Link
                 to="/login"
@@ -81,7 +105,7 @@ export default function Navbar() {
               <Link to="/dashboard" className="opacity-85 hover:opacity-100 font-medium">
                 {t("dashboard", "Dashboard")}
               </Link>
-              <span className="opacity-85 hidden md:inline text-xs">
+              <span className="opacity-85 hidden lg:inline text-xs">
                 👤 {user.username} {user.role === "admin" ? "(Admin)" : user.department?.name ? `(${user.department.name})` : ""}
               </span>
               <button
@@ -95,10 +119,13 @@ export default function Navbar() {
         </nav>
       </header>
 
-      {/* SOS Modal Component */}
+      {/* Modals */}
       <SOSModal isOpen={isSosOpen} onClose={() => setIsSosOpen(false)} />
+      <MyComplaintsModal isOpen={isMyComplaintsOpen} onClose={() => setIsMyComplaintsOpen(false)} />
+      <LeaderboardModal isOpen={isLeaderboardOpen} onClose={() => setIsLeaderboardOpen(false)} />
     </>
   );
 }
+
 
 

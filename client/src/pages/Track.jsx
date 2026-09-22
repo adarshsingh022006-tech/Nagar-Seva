@@ -1,11 +1,13 @@
-// src/pages/Track.jsx
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Timeline from "../components/Timeline";
 import StatusBadge from "../components/StatusBadge";
+import RatingModal from "../components/RatingModal";
+import ReopenModal from "../components/ReopenModal";
 import { trackComplaint, getImageUrl } from "../services/api";
 import { useLanguage } from "../context/LanguageContext";
+import { getSlaInfo } from "../utils/slaHelper";
 
 export default function Track() {
   const { t } = useLanguage();
@@ -14,6 +16,8 @@ export default function Track() {
   const [complaint, setComplaint] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isRatingOpen, setIsRatingOpen] = useState(false);
+  const [isReopenOpen, setIsReopenOpen] = useState(false);
 
   useEffect(() => {
     const idFromQuery = searchParams.get("id");
@@ -99,8 +103,43 @@ export default function Track() {
                 </div>
               )}
 
-              <Timeline status={complaint.status} />
+              {/* SLA Countdown Timer Badge */}
+              {complaint.slaDeadline && (
+                <div className="mb-4 flex items-center justify-between bg-gray-50 border border-gray-200 rounded-2xl p-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-gray-600">Resolution SLA:</span>
+                    {(() => {
+                      const sla = getSlaInfo(complaint.slaDeadline, complaint.status);
+                      return (
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${sla.badgeClass}`}>
+                          {sla.text}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <span className="text-[11px] text-gray-400">
+                    Deadline: {new Date(complaint.slaDeadline).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
 
+              {/* Reopened Banner */}
+              {complaint.isReopened && (
+                <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-3.5 mb-5 text-xs text-red-900">
+                  <div className="font-extrabold flex items-center gap-1.5 text-red-700 uppercase tracking-wider mb-1">
+                    <span>🔄</span>
+                    <span>Issue Re-Opened by Citizen</span>
+                  </div>
+                  <div className="text-gray-700 italic">"{complaint.reopenReason}"</div>
+                  {complaint.reopenedAt && (
+                    <div className="text-[10px] text-gray-400 mt-1">
+                      Re-opened on: {new Date(complaint.reopenedAt).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <Timeline status={complaint.status} />
 
               {/* Citizen Voice Note Audio Player */}
               {complaint.audioUrl && (
@@ -155,6 +194,68 @@ export default function Track() {
               {complaint.resolvedAt && (
                 <Row label="Resolved on" value={new Date(complaint.resolvedAt).toLocaleString()} />
               )}
+
+              {/* Star Rating Section */}
+              {complaint.status === "Resolved" && (
+                <div className="mt-6 pt-5 border-t border-gray-100 bg-amber-50/50 rounded-2xl p-4 border border-amber-200">
+                  {complaint.rating?.stars ? (
+                    <div>
+                      <div className="text-xs font-bold text-amber-900 uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <span>⭐</span>
+                        <span>Citizen Satisfaction Rating</span>
+                      </div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-lg">
+                          {"⭐".repeat(complaint.rating.stars)}
+                        </span>
+                        <span className="text-xs font-bold text-gray-700">({complaint.rating.stars}/5)</span>
+                      </div>
+                      {complaint.rating.comment && (
+                        <p className="text-xs text-gray-600 italic">"{complaint.rating.comment}"</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="font-bold text-xs text-amber-900">How was the resolution?</div>
+                        <div className="text-[11px] text-gray-500">Rate the municipal team's work to earn Civic Karma!</div>
+                      </div>
+                      <button
+                        onClick={() => setIsRatingOpen(true)}
+                        className="bg-amber-500 hover:bg-amber-600 text-ink font-extrabold px-4 py-2 rounded-xl text-xs transition-colors shadow-sm"
+                      >
+                        ⭐ Rate Work (+20 Karma)
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Reopen Action for Resolved issues */}
+                  <div className="mt-4 pt-3 border-t border-amber-200/60 flex items-center justify-between">
+                    <span className="text-[11px] text-gray-500">Problem not resolved or re-occurred?</span>
+                    <button
+                      onClick={() => setIsReopenOpen(true)}
+                      className="text-xs font-bold text-red-600 hover:text-red-700 underline flex items-center gap-1"
+                    >
+                      <span>🔄</span>
+                      <span>Re-Open Issue</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Modals */}
+              <RatingModal
+                complaintId={complaint.complaintId}
+                isOpen={isRatingOpen}
+                onClose={() => setIsRatingOpen(false)}
+                onRated={() => fetchTracking(complaint.complaintId)}
+              />
+              <ReopenModal
+                complaintId={complaint.complaintId}
+                isOpen={isReopenOpen}
+                onClose={() => setIsReopenOpen(false)}
+                onReopened={() => fetchTracking(complaint.complaintId)}
+              />
             </div>
           )}
         </div>

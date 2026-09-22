@@ -6,10 +6,11 @@ const path = require("path");
 const fs = require("fs");
 
 const connectDB = require("./config/db");
-const Department = require("./models/Department");
+const Announcement = require("./models/Announcement");
 const authRoutes = require("./routes/authRoutes");
 const complaintRoutes = require("./routes/complaintRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
+const announcementRoutes = require("./routes/announcementRoutes");
 
 const app = express();
 
@@ -18,7 +19,7 @@ app.set("trust proxy", 1);
 
 const User = require("./models/User");
 
-// Auto-seed default departments and demo accounts on startup if missing
+// Auto-seed default departments, demo accounts, and initial announcement
 const DEFAULT_DEPARTMENTS = [
   "Water Department",
   "Electricity Department",
@@ -60,13 +61,34 @@ async function ensureDefaultData() {
         console.log(`🌱 Auto-created demo account: ${acc.username}`);
       }
     }
-    console.log("✅ Initial departments and demo accounts ready.");
+
+    const annCount = await Announcement.countDocuments();
+    if (annCount === 0) {
+      await Announcement.create({
+        title: "🚰 Scheduled Pipeline Maintenance",
+        content: "Water supply pipeline upgrade in Ward 3 & 4 scheduled for Thursday 10:00 AM - 2:00 PM.",
+        category: "Water",
+        urgency: "Warning",
+        ward: "Ward 3 & 4",
+        createdBy: "Water Department Chief",
+      });
+      await Announcement.create({
+        title: "🌱 Harit Nagar Cleanliness Drive",
+        content: "Join the municipal cleanliness and sapling plantation drive this Saturday at Gandhi Park!",
+        category: "General",
+        urgency: "Info",
+        ward: "All Wards",
+        createdBy: "Municipal Commissioner",
+      });
+    }
+    console.log("✅ Initial departments, demo accounts, and announcements ready.");
   } catch (err) {
     console.error("⚠️ Failed to auto-seed initial data:", err.message);
   }
 }
 
 connectDB().then(ensureDefaultData);
+
 
 
 // CORS configuration supporting dynamic origin / env var
@@ -125,6 +147,8 @@ app.get("/", (req, res, next) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/complaints", complaintRoutes);
 app.use("/api/departments", departmentRoutes);
+app.use("/api/announcements", announcementRoutes);
+
 
 // If client build exists (production / full-stack deployment), serve it statically
 const clientDistPath = path.join(__dirname, "../client/dist");

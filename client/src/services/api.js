@@ -84,3 +84,27 @@ export const updateComplaintStatus = (id, status) =>
 export const resolveComplaint = (id, formData) =>
   api.patch(`/complaints/${id}/resolve`, formData, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data);
 
+export const rateComplaint = (id, data) =>
+  api.post(`/complaints/${encodeURIComponent(id)}/rate`, data).then((r) => r.data);
+
+export const reopenComplaint = (id, data) =>
+  api.post(`/complaints/${encodeURIComponent(id)}/reopen`, data).then((r) => r.data);
+
+export const fetchComplaintsByPhone = (phone) =>
+  api.get(`/complaints/by-phone/${encodeURIComponent(phone)}`).then((r) => r.data);
+
+export const fetchLeaderboard = () =>
+  api.get("/complaints/leaderboard").then((r) => r.data);
+
+// ---- Announcements ----
+export const fetchAnnouncements = () =>
+  api.get("/announcements").then((r) => r.data);
+
+export const createAnnouncement = (data) =>
+  api.post("/announcements", data).then((r) => r.data);
+
+export const deleteAnnouncement = (id) =>
+  api.delete(`/announcements/${id}`).then((r) => r.data);
+
+
+

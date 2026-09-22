@@ -127,6 +127,17 @@ async function createComplaint(req, res, next) {
       }
     }
 
+    // Calculate Category-based SLA Deadline
+    let slaHours = 48; // Default 48 hours for general
+    if (isEmergency) {
+      slaHours = 6; // 6 hours for SOS
+    } else if (category === "Water Supply" || category === "Sanitation") {
+      slaHours = 24; // 24 hours
+    } else if (category === "Electricity" || category === "Street Lights") {
+      slaHours = 24;
+    }
+    const slaDeadline = new Date(Date.now() + slaHours * 3600 * 1000);
+
     let complaint;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -143,6 +154,7 @@ async function createComplaint(req, res, next) {
           isSOS: isEmergency,
           duplicateCount: 1,
           additionalReports: [],
+          slaDeadline,
           priority: isEmergency ? "EMERGENCY" : (priority || "Normal"),
           location: {
             lat: numLat,
@@ -163,6 +175,7 @@ async function createComplaint(req, res, next) {
       department: deptName,
       isSOS: isEmergency,
       duplicateCount: 1,
+      slaDeadline,
     });
   } catch (err) {
     console.error("Error creating complaint:", err);
@@ -170,134 +183,149 @@ async function createComplaint(req, res, next) {
   }
 }
 
-// GET /api/complaints/track/:complaintId  (public)
-async function trackComplaint(req, res, next) {
+// POST /api/complaints/:id/rate (public citizen rating on resolved complaint)
+async function rateComplaint(req, res, next) {
   try {
-    const queryId = req.params.complaintId.trim();
+    const { stars, comment } = req.body;
+    if (!stars || stars < 1 || stars > 5) {
+      return res.status(400).json({ message: "Stars rating (1 to 5) is required." });
+    }
+
     const complaint = await Complaint.findOne({
-      complaintId: { $regex: new RegExp(`^${queryId}$`, "i") },
-    }).populate("department", "name");
+      $or: [{ _id: req.params.id }, { complaintId: req.params.id.toUpperCase() }],
+    });
 
-    if (!complaint) {
-      return res.status(404).json({ message: "No complaint found with that ID." });
+    if (!complaint) return res.status(404).json({ message: "Complaint not found." });
+    if (complaint.status !== "Resolved") {
+      return res.status(400).json({ message: "You can only rate a complaint once it has been resolved." });
     }
-    res.json(complaint);
+
+    complaint.rating = {
+      stars: Number(stars),
+      comment: comment?.trim() || "",
+      ratedAt: new Date(),
+    };
+    await complaint.save();
+
+    res.json({ message: "Thank you for rating municipal service! ⭐", complaint });
   } catch (err) {
     next(err);
   }
 }
 
-// GET /api/complaints  (protected — department-scoped unless admin)
-async function listComplaints(req, res, next) {
+// POST /api/complaints/:id/reopen (citizen re-opens complaint if fix is unsatisfactory)
+async function reopenComplaint(req, res, next) {
   try {
-    const filter = {};
-    if (req.user.role === "department") {
-      filter.department = req.user.department?._id || req.user.department;
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ message: "Please provide a reason why this complaint should be re-opened." });
     }
-    if (req.query.status) filter.status = req.query.status;
-    if (req.query.category) filter.category = req.query.category;
-    if (req.query.isSOS !== undefined) filter.isSOS = req.query.isSOS === "true";
-    if (req.query.priority) filter.priority = req.query.priority;
-    if (req.query.piledOnly === "true") filter.duplicateCount = { $gt: 1 };
 
-    const complaints = await Complaint.find(filter)
+    const complaint = await Complaint.findOne({
+      $or: [{ _id: req.params.id }, { complaintId: req.params.id.toUpperCase() }],
+    });
+
+    if (!complaint) return res.status(404).json({ message: "Complaint not found." });
+
+    complaint.status = "In Progress";
+    complaint.isReopened = true;
+    complaint.reopenReason = reason.trim();
+    complaint.reopenedAt = new Date();
+    complaint.priority = "High"; // Reopened issues get High priority automatically!
+    await complaint.save();
+
+    res.json({
+      message: "Complaint has been re-opened and flagged as High Priority for departmental re-investigation.",
+      complaint,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/complaints/by-phone/:phone (citizen history & karma score)
+async function getComplaintsByPhone(req, res, next) {
+  try {
+    const phone = req.params.phone.trim();
+    if (!phone) return res.status(400).json({ message: "Phone number required." });
+
+    const complaints = await Complaint.find({
+      $or: [
+        { phone: { $regex: phone, $options: "i" } },
+        { "additionalReports.phone": { $regex: phone, $options: "i" } },
+      ],
+    })
       .populate("department", "name")
-      .sort({ isSOS: -1, duplicateCount: -1, createdAt: -1 });
-    res.json(complaints);
+      .sort({ createdAt: -1 });
+
+    // Compute Civic Karma Points
+    const filedCount = complaints.length;
+    const resolvedCount = complaints.filter((c) => c.status === "Resolved").length;
+    const ratedCount = complaints.filter((c) => c.rating?.stars).length;
+    const karmaScore = filedCount * 50 + resolvedCount * 30 + ratedCount * 20;
+
+    let badge = "🌱 Civic Starter";
+    if (karmaScore >= 300) badge = "🏆 Diamond Citizen";
+    else if (karmaScore >= 150) badge = "🌟 Gold Citizen";
+    else if (karmaScore >= 80) badge = "🛡️ Silver Citizen";
+
+    res.json({
+      phone,
+      complaints,
+      stats: {
+        totalFiled: filedCount,
+        totalResolved: resolvedCount,
+        totalRated: ratedCount,
+        karmaScore,
+        badge,
+      },
+    });
   } catch (err) {
     next(err);
   }
 }
 
-
-// PATCH /api/complaints/:id/status  (protected — Pending / In Progress only)
-async function updateStatus(req, res, next) {
+// GET /api/complaints/leaderboard (Top Civic Champions)
+async function getLeaderboard(req, res, next) {
   try {
-    const { status } = req.body;
-    if (!["Pending", "In Progress"].includes(status)) {
-      return res.status(400).json({
-        message: "Resolving a complaint requires a proof-of-fix photo — use the Resolve action instead.",
-      });
-    }
-
-    const complaint = await Complaint.findById(req.params.id);
-    if (!complaint) return res.status(404).json({ message: "Complaint not found." });
-
-    if (req.user.role === "department") {
-      const myDept = String(req.user.department?._id || req.user.department);
-      if (String(complaint.department) !== myDept) {
-        return res.status(403).json({ message: "This complaint isn't assigned to your department." });
-      }
-    }
-
-    complaint.status = status;
-    await complaint.save();
-    res.json({ message: "Status updated", complaint });
-  } catch (err) {
-    next(err);
-  }
-}
-
-// PATCH /api/complaints/:id/resolve  (protected, multipart/form-data — photo required)
-async function resolveComplaint(req, res, next) {
-  try {
-    const photoFile = req.file || (req.files?.photo && req.files.photo[0]);
-    if (!photoFile) {
-      return res.status(400).json({ message: "A proof-of-fix photo is required to resolve a complaint." });
-    }
-
-    const complaint = await Complaint.findById(req.params.id);
-    if (!complaint) return res.status(404).json({ message: "Complaint not found." });
-
-    if (req.user.role === "department") {
-      const myDept = String(req.user.department?._id || req.user.department);
-      if (String(complaint.department) !== myDept) {
-        return res.status(403).json({ message: "This complaint isn't assigned to your department." });
-      }
-    }
-
-    complaint.status = "Resolved";
-    complaint.resolutionPhotoUrl = fileUrl(req, photoFile.filename);
-    complaint.resolvedBy = req.user.username;
-    complaint.resolvedAt = new Date();
-    await complaint.save();
-
-    res.json({ message: "Complaint marked as resolved", complaint });
-  } catch (err) {
-    next(err);
-  }
-}
-
-// GET /api/complaints/stats  (protected — department-scoped unless admin)
-async function getStats(req, res, next) {
-  try {
-    const filter = {};
-    if (req.user.role === "department") {
-      filter.department = req.user.department?._id || req.user.department;
-    }
-
-    const [total, pending, inProgress, resolved, emergencyCount, piledCount] = await Promise.all([
-      Complaint.countDocuments(filter),
-      Complaint.countDocuments({ ...filter, status: "Pending" }),
-      Complaint.countDocuments({ ...filter, status: "In Progress" }),
-      Complaint.countDocuments({ ...filter, status: "Resolved" }),
-      Complaint.countDocuments({ ...filter, isSOS: true, status: { $ne: "Resolved" } }),
-      Complaint.countDocuments({ ...filter, duplicateCount: { $gt: 1 }, status: { $ne: "Resolved" } }),
+    const topCitizens = await Complaint.aggregate([
+      {
+        $group: {
+          _id: "$phone",
+          name: { $first: "$citizenName" },
+          count: { $sum: 1 },
+          resolved: {
+            $sum: { $cond: [{ $eq: ["$status", "Resolved"] }, 1, 0] },
+          },
+        },
+      },
+      {
+        $project: {
+          phone: "$_id",
+          name: { $ifNull: ["$name", "Citizen"] },
+          count: 1,
+          resolved: 1,
+          karmaScore: { $add: [{ $multiply: ["$count", 50] }, { $multiply: ["$resolved", 30] }] },
+        },
+      },
+      { $sort: { karmaScore: -1 } },
+      { $limit: 10 },
     ]);
 
-    let byDepartment = [];
-    if (req.user.role === "admin") {
-      byDepartment = await Complaint.aggregate([
-        { $group: { _id: "$department", count: { $sum: 1 } } },
-        { $lookup: { from: "departments", localField: "_id", foreignField: "_id", as: "dept" } },
-        { $unwind: "$dept" },
-        { $project: { _id: 0, department: "$dept.name", count: 1 } },
-        { $sort: { count: -1 } },
-      ]);
-    }
+    // Mask phone numbers for privacy e.g. +91 98****3210
+    const masked = topCitizens.map((c, i) => {
+      const p = String(c.phone || "");
+      const visible = p.length >= 6 ? `${p.slice(0, 3)}****${p.slice(-3)}` : "Citizen";
+      return {
+        rank: i + 1,
+        name: c.name && c.name !== "Anonymous" && c.name !== "Anonymous Citizen" ? c.name : `Citizen ${visible}`,
+        karmaScore: c.karmaScore,
+        reportsFiled: c.count,
+        resolvedIssues: c.resolved,
+      };
+    });
 
-    res.json({ total, pending, inProgress, resolved, emergencyCount, piledCount, byDepartment });
-
+    res.json(masked);
   } catch (err) {
     next(err);
   }
@@ -309,8 +337,13 @@ module.exports = {
   listComplaints,
   updateStatus,
   resolveComplaint,
+  rateComplaint,
+  reopenComplaint,
+  getComplaintsByPhone,
+  getLeaderboard,
   getStats,
   CATEGORY_DEPARTMENT_MAP,
 };
+
 
 

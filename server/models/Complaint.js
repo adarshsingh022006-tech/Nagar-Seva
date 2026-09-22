@@ -58,6 +58,22 @@ const complaintSchema = new mongoose.Schema(
       default: "Pending",
     },
 
+    // SLA Deadline & Timers
+    slaDeadline: { type: Date, default: null },
+
+
+    // Citizen Rating & Feedback (after resolution)
+    rating: {
+      stars: { type: Number, min: 1, max: 5, default: null },
+      comment: { type: String, default: "" },
+      ratedAt: { type: Date, default: null },
+    },
+
+    // Citizen Re-open Workflow
+    isReopened: { type: Boolean, default: false },
+    reopenReason: { type: String, default: null },
+    reopenedAt: { type: Date, default: null },
+
     resolutionPhotoUrl: { type: String, default: null }, // proof-of-fix photo
     resolvedBy: { type: String, default: null }, // staff username
     resolvedAt: { type: Date, default: null },
@@ -66,5 +82,6 @@ const complaintSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("Complaint", complaintSchema);
+
 
 
