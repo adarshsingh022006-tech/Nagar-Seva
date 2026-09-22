@@ -1,6 +1,15 @@
 // models/Complaint.js
 const mongoose = require("mongoose");
 
+const additionalReportSchema = new mongoose.Schema({
+  citizenName: { type: String, default: "Anonymous" },
+  phone: { type: String, default: "" },
+  description: { type: String, default: "" },
+  photoUrl: { type: String, default: null },
+  audioUrl: { type: String, default: null },
+  reportedAt: { type: Date, default: Date.now },
+});
+
 const complaintSchema = new mongoose.Schema(
   {
     complaintId: { type: String, required: true, unique: true }, // e.g. CMP-20260829-0001 or SOS-20260829-0001
@@ -25,6 +34,10 @@ const complaintSchema = new mongoose.Schema(
     description: { type: String, required: true, trim: true },
     photoUrl: { type: String, default: null }, // citizen's photo of the issue
     audioUrl: { type: String, default: null }, // citizen's voice note recording
+
+    // Duplicate Complaint Clustering & Piled Up Tracking
+    duplicateCount: { type: Number, default: 1 },
+    additionalReports: [additionalReportSchema],
 
     isSOS: { type: Boolean, default: false }, // Emergency SOS flag
     priority: {
@@ -53,4 +66,5 @@ const complaintSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("Complaint", complaintSchema);
+
 

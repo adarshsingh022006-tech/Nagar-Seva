@@ -65,6 +65,68 @@ async function createComplaint(req, res, next) {
     const photoUrl = photoFilename ? fileUrl(req, photoFilename) : null;
     const audioUrl = audioFilename ? fileUrl(req, audioFilename) : null;
 
+    const numLat = lat ? Number(lat) : null;
+    const numLng = lng ? Number(lng) : null;
+    const trimmedAddress = address ? address.trim() : "";
+
+    // 🔍 Smart Duplicate Detection: Check for active unresolved complaint in same category nearby
+    if (!isEmergency) {
+      const activeSameCategory = await Complaint.find({
+        category,
+        status: { $ne: "Resolved" },
+      });
+
+      let existingMatch = null;
+      for (const candidate of activeSameCategory) {
+        // 1. Proximity check (~300 meters)
+        if (numLat && numLng && candidate.location?.lat && candidate.location?.lng) {
+          const latDiff = Math.abs(numLat - candidate.location.lat);
+          const lngDiff = Math.abs(numLng - candidate.location.lng);
+          if (latDiff <= 0.003 && lngDiff <= 0.003) {
+            existingMatch = candidate;
+            break;
+          }
+        }
+
+        // 2. Address text match
+        if (!existingMatch && trimmedAddress && candidate.location?.address) {
+          const a1 = trimmedAddress.toLowerCase();
+          const a2 = candidate.location.address.trim().toLowerCase();
+          if (a1.length >= 6 && a2.length >= 6) {
+            if (a1 === a2 || a1.includes(a2) || a2.includes(a1)) {
+              existingMatch = candidate;
+              break;
+            }
+          }
+        }
+      }
+
+      // If duplicate/clustered match found, merge into parent complaint
+      if (existingMatch) {
+        existingMatch.additionalReports.push({
+          citizenName: citizenName?.trim() || "Anonymous Citizen",
+          phone: phone.trim(),
+          description: description.trim(),
+          photoUrl,
+          audioUrl,
+          reportedAt: new Date(),
+        });
+        existingMatch.duplicateCount = (existingMatch.duplicateCount || 1) + 1;
+        if (existingMatch.duplicateCount >= 3 && existingMatch.priority === "Normal") {
+          existingMatch.priority = "High";
+        }
+        await existingMatch.save();
+
+        return res.status(200).json({
+          message: `🔥 Issue already reported in this locality! Your report was merged with #${existingMatch.complaintId} (Piled: ${existingMatch.duplicateCount} citizen reports).`,
+          complaintId: existingMatch.complaintId,
+          department: deptName,
+          isDuplicateMerged: true,
+          duplicateCount: existingMatch.duplicateCount,
+        });
+      }
+    }
+
     let complaint;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -79,11 +141,13 @@ async function createComplaint(req, res, next) {
           photoUrl,
           audioUrl,
           isSOS: isEmergency,
+          duplicateCount: 1,
+          additionalReports: [],
           priority: isEmergency ? "EMERGENCY" : (priority || "Normal"),
           location: {
-            lat: lat ? Number(lat) : null,
-            lng: lng ? Number(lng) : null,
-            address: address ? address.trim() : "",
+            lat: numLat,
+            lng: numLng,
+            address: trimmedAddress,
           },
         });
         break;
@@ -98,6 +162,7 @@ async function createComplaint(req, res, next) {
       complaintId: complaint.complaintId,
       department: deptName,
       isSOS: isEmergency,
+      duplicateCount: 1,
     });
   } catch (err) {
     console.error("Error creating complaint:", err);
@@ -133,15 +198,17 @@ async function listComplaints(req, res, next) {
     if (req.query.category) filter.category = req.query.category;
     if (req.query.isSOS !== undefined) filter.isSOS = req.query.isSOS === "true";
     if (req.query.priority) filter.priority = req.query.priority;
+    if (req.query.piledOnly === "true") filter.duplicateCount = { $gt: 1 };
 
     const complaints = await Complaint.find(filter)
       .populate("department", "name")
-      .sort({ isSOS: -1, createdAt: -1 });
+      .sort({ isSOS: -1, duplicateCount: -1, createdAt: -1 });
     res.json(complaints);
   } catch (err) {
     next(err);
   }
 }
+
 
 // PATCH /api/complaints/:id/status  (protected — Pending / In Progress only)
 async function updateStatus(req, res, next) {
@@ -209,12 +276,13 @@ async function getStats(req, res, next) {
       filter.department = req.user.department?._id || req.user.department;
     }
 
-    const [total, pending, inProgress, resolved, emergencyCount] = await Promise.all([
+    const [total, pending, inProgress, resolved, emergencyCount, piledCount] = await Promise.all([
       Complaint.countDocuments(filter),
       Complaint.countDocuments({ ...filter, status: "Pending" }),
       Complaint.countDocuments({ ...filter, status: "In Progress" }),
       Complaint.countDocuments({ ...filter, status: "Resolved" }),
       Complaint.countDocuments({ ...filter, isSOS: true, status: { $ne: "Resolved" } }),
+      Complaint.countDocuments({ ...filter, duplicateCount: { $gt: 1 }, status: { $ne: "Resolved" } }),
     ]);
 
     let byDepartment = [];
@@ -228,7 +296,8 @@ async function getStats(req, res, next) {
       ]);
     }
 
-    res.json({ total, pending, inProgress, resolved, emergencyCount, byDepartment });
+    res.json({ total, pending, inProgress, resolved, emergencyCount, piledCount, byDepartment });
+
   } catch (err) {
     next(err);
   }

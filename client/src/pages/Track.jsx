@@ -84,7 +84,23 @@ export default function Track() {
                 </div>
               )}
 
+              {/* Piled Up Issue Banner */}
+              {complaint.duplicateCount > 1 && (
+                <div className="bg-amber-100 border-2 border-amber-300 text-amber-900 font-bold px-4 py-3 rounded-2xl text-xs sm:text-sm mb-6 flex items-center gap-2 shadow-sm">
+                  <span className="text-xl">🔥</span>
+                  <div>
+                    <div className="font-extrabold">
+                      Piled Up Issue: {complaint.duplicateCount} Citizens Reported This!
+                    </div>
+                    <div className="text-[11px] font-normal text-amber-800 mt-0.5">
+                      Multiple reports merged together from this neighborhood. Priority elevated!
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <Timeline status={complaint.status} />
+
 
               {/* Citizen Voice Note Audio Player */}
               {complaint.audioUrl && (
