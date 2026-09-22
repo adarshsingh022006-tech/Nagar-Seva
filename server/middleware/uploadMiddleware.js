@@ -1,5 +1,5 @@
 // middleware/uploadMiddleware.js
-// Handles photo uploads (citizen complaint photo + staff proof-of-fix photo).
+// Handles photo & voice audio note uploads.
 // Files are saved to server/uploads and served statically at /uploads/<filename>.
 
 const multer = require("multer");
@@ -13,22 +13,34 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
+    const ext = path.extname(file.originalname) || (file.mimetype.includes("audio") ? ".webm" : ".jpg");
+    cb(null, `${unique}${ext}`);
   },
 });
 
-const allowedTypes = /jpeg|jpg|png|webp|gif/;
+const allowedTypes = /jpeg|jpg|png|webp|gif|webm|mp3|wav|ogg|m4a|aac|octet-stream/;
 function fileFilter(req, file, cb) {
-  const extOk = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimeOk = allowedTypes.test(file.mimetype);
-  if (extOk && mimeOk) return cb(null, true);
-  cb(new Error("Only image files (jpg, png, webp, gif) are allowed"));
+  const ext = path.extname(file.originalname).toLowerCase().replace(".", "");
+  const extOk = ext ? allowedTypes.test(ext) : true;
+  const mimeOk = file.mimetype.startsWith("image/") || file.mimetype.startsWith("audio/") || allowedTypes.test(file.mimetype);
+  if (extOk || mimeOk) return cb(null, true);
+  cb(new Error("Only image files (jpg, png, webp) and audio recordings (webm, mp3, wav, m4a) are allowed"));
 }
 
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
 });
 
-module.exports = upload;
+// Middleware for complaint filing (photo + optional voice note)
+const complaintUpload = upload.fields([
+  { name: "photo", maxCount: 1 },
+  { name: "audio", maxCount: 1 },
+]);
+
+module.exports = {
+  upload,
+  complaintUpload,
+};
+

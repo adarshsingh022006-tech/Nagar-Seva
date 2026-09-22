@@ -1,7 +1,7 @@
 // routes/complaintRoutes.js
 const express = require("express");
 const router = express.Router();
-const upload = require("../middleware/uploadMiddleware");
+const { upload, complaintUpload } = require("../middleware/uploadMiddleware");
 const { protect } = require("../middleware/authMiddleware");
 const {
   createComplaint,
@@ -13,7 +13,7 @@ const {
 } = require("../controllers/complaintController");
 
 // ---- Public (citizen-facing) ----
-router.post("/", upload.single("photo"), createComplaint);
+router.post("/", complaintUpload, createComplaint);
 router.get("/track/:complaintId", trackComplaint);
 
 // ---- Protected (staff/admin) ----
@@ -23,3 +23,4 @@ router.patch("/:id/status", protect, updateStatus);
 router.patch("/:id/resolve", protect, upload.single("photo"), resolveComplaint);
 
 module.exports = router;
+

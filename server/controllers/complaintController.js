@@ -9,7 +9,8 @@ const CATEGORY_DEPARTMENT_MAP = {
   "Electricity": "Electricity Department",
   "Roads": "Roads & Infrastructure Department",
   "Sanitation": "Sanitation Department",
-  "Street Lights": "Electricity Department", // shares the Electrical/Municipal team
+  "Street Lights": "Electricity Department",
+  "Emergency SOS": "General/Municipal Department",
   "Other": "General/Municipal Department",
 };
 
@@ -21,7 +22,7 @@ function fileUrl(req, filename) {
 // POST /api/complaints  (public, multipart/form-data)
 async function createComplaint(req, res, next) {
   try {
-    const { citizenName, phone, category, description, lat, lng, address } = req.body;
+    const { citizenName, phone, category, description, lat, lng, address, isSOS, priority } = req.body;
 
     if (!phone || !category || !description) {
       return res.status(400).json({ message: "Phone, category and description are required." });
@@ -30,10 +31,11 @@ async function createComplaint(req, res, next) {
       return res.status(400).json({ message: "Invalid category selected." });
     }
 
-    const deptName = CATEGORY_DEPARTMENT_MAP[category];
+    const isEmergency = isSOS === "true" || isSOS === true || category === "Emergency SOS";
+    const deptName = CATEGORY_DEPARTMENT_MAP[category] || "General/Municipal Department";
+
     let department = await Department.findOne({ name: deptName });
     if (!department) {
-      // Auto-create department if not already seeded
       department = await Department.findOneAndUpdate(
         { name: deptName },
         { name: deptName },
@@ -41,20 +43,43 @@ async function createComplaint(req, res, next) {
       );
     }
 
-    const photoUrl = req.file ? fileUrl(req, req.file.filename) : null;
+    // Extract photo and audio from req.files or req.file
+    let photoFilename = null;
+    let audioFilename = null;
+
+    if (req.files) {
+      if (req.files.photo && req.files.photo[0]) {
+        photoFilename = req.files.photo[0].filename;
+      }
+      if (req.files.audio && req.files.audio[0]) {
+        audioFilename = req.files.audio[0].filename;
+      }
+    } else if (req.file) {
+      if (req.file.mimetype.startsWith("audio/")) {
+        audioFilename = req.file.filename;
+      } else {
+        photoFilename = req.file.filename;
+      }
+    }
+
+    const photoUrl = photoFilename ? fileUrl(req, photoFilename) : null;
+    const audioUrl = audioFilename ? fileUrl(req, audioFilename) : null;
 
     let complaint;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const complaintId = await generateComplaintId();
+        const complaintId = await generateComplaintId(isEmergency);
         complaint = await Complaint.create({
           complaintId,
-          citizenName: citizenName?.trim() || "Anonymous",
+          citizenName: citizenName?.trim() || (isEmergency ? "Emergency Citizen" : "Anonymous"),
           phone: phone.trim(),
           category,
           department: department._id,
           description: description.trim(),
           photoUrl,
+          audioUrl,
+          isSOS: isEmergency,
+          priority: isEmergency ? "EMERGENCY" : (priority || "Normal"),
           location: {
             lat: lat ? Number(lat) : null,
             lng: lng ? Number(lng) : null,
@@ -69,9 +94,10 @@ async function createComplaint(req, res, next) {
     }
 
     res.status(201).json({
-      message: "Complaint filed successfully",
+      message: isEmergency ? "🚨 EMERGENCY SOS Filed Successfully!" : "Complaint filed successfully",
       complaintId: complaint.complaintId,
       department: deptName,
+      isSOS: isEmergency,
     });
   } catch (err) {
     console.error("Error creating complaint:", err);
@@ -105,10 +131,12 @@ async function listComplaints(req, res, next) {
     }
     if (req.query.status) filter.status = req.query.status;
     if (req.query.category) filter.category = req.query.category;
+    if (req.query.isSOS !== undefined) filter.isSOS = req.query.isSOS === "true";
+    if (req.query.priority) filter.priority = req.query.priority;
 
     const complaints = await Complaint.find(filter)
       .populate("department", "name")
-      .sort("-createdAt");
+      .sort({ isSOS: -1, createdAt: -1 });
     res.json(complaints);
   } catch (err) {
     next(err);
@@ -146,7 +174,8 @@ async function updateStatus(req, res, next) {
 // PATCH /api/complaints/:id/resolve  (protected, multipart/form-data — photo required)
 async function resolveComplaint(req, res, next) {
   try {
-    if (!req.file) {
+    const photoFile = req.file || (req.files?.photo && req.files.photo[0]);
+    if (!photoFile) {
       return res.status(400).json({ message: "A proof-of-fix photo is required to resolve a complaint." });
     }
 
@@ -161,7 +190,7 @@ async function resolveComplaint(req, res, next) {
     }
 
     complaint.status = "Resolved";
-    complaint.resolutionPhotoUrl = fileUrl(req, req.file.filename);
+    complaint.resolutionPhotoUrl = fileUrl(req, photoFile.filename);
     complaint.resolvedBy = req.user.username;
     complaint.resolvedAt = new Date();
     await complaint.save();
@@ -180,11 +209,12 @@ async function getStats(req, res, next) {
       filter.department = req.user.department?._id || req.user.department;
     }
 
-    const [total, pending, inProgress, resolved] = await Promise.all([
+    const [total, pending, inProgress, resolved, emergencyCount] = await Promise.all([
       Complaint.countDocuments(filter),
       Complaint.countDocuments({ ...filter, status: "Pending" }),
       Complaint.countDocuments({ ...filter, status: "In Progress" }),
       Complaint.countDocuments({ ...filter, status: "Resolved" }),
+      Complaint.countDocuments({ ...filter, isSOS: true, status: { $ne: "Resolved" } }),
     ]);
 
     let byDepartment = [];
@@ -198,7 +228,7 @@ async function getStats(req, res, next) {
       ]);
     }
 
-    res.json({ total, pending, inProgress, resolved, byDepartment });
+    res.json({ total, pending, inProgress, resolved, emergencyCount, byDepartment });
   } catch (err) {
     next(err);
   }
@@ -213,4 +243,5 @@ module.exports = {
   getStats,
   CATEGORY_DEPARTMENT_MAP,
 };
+
 

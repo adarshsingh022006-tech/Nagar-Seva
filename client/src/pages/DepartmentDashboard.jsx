@@ -6,16 +6,19 @@ import StatCard from "../components/StatCard";
 import StatusBadge from "../components/StatusBadge";
 import ResolveModal from "../components/ResolveModal";
 import { fetchComplaints, fetchStats, updateComplaintStatus, resolveComplaint, getImageUrl } from "../services/api";
+import { useLanguage } from "../context/LanguageContext";
 
 export default function DepartmentDashboard() {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [user, setUser] = useState(null);
   const [stats, setStats] = useState(null);
   const [complaints, setComplaints] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
+  const [sosFilter, setSosFilter] = useState(false);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
-  const [resolveTarget, setResolveTarget] = useState(null); // complaint id being resolved
+  const [resolveTarget, setResolveTarget] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem("nagarseva_token");
@@ -36,9 +39,13 @@ export default function DepartmentDashboard() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      const params = {};
+      if (statusFilter) params.status = statusFilter;
+      if (sosFilter) params.isSOS = "true";
+
       const [statsData, complaintsData] = await Promise.all([
         fetchStats(),
-        fetchComplaints(statusFilter ? { status: statusFilter } : {}),
+        fetchComplaints(params),
       ]);
       setStats(statsData);
       setComplaints(complaintsData);
@@ -48,7 +55,7 @@ export default function DepartmentDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, sosFilter]);
 
   useEffect(() => {
     if (user) loadData();
@@ -87,13 +94,48 @@ export default function DepartmentDashboard() {
   return (
     <div>
       <Navbar />
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        <h1 className="font-display text-xl font-semibold mb-4">
-          {user.role === "admin" ? "🏛️ Admin Dashboard — All Departments" : `📋 ${user.department?.name || "Department"} Dashboard`}
-        </h1>
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {/* Urgent Emergency Alert Banner */}
+        {stats?.emergencyCount > 0 && (
+          <div className="bg-red-600 text-white p-4 rounded-2xl mb-6 shadow-lg shadow-red-600/30 flex items-center justify-between animate-pulse">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🚨</span>
+              <div>
+                <div className="font-extrabold text-sm sm:text-base uppercase tracking-wider">
+                  {stats.emergencyCount} Unresolved Emergency SOS {stats.emergencyCount > 1 ? "Alerts" : "Alert"}
+                </div>
+                <div className="text-xs text-red-100">
+                  High-priority public safety hazards requiring immediate departmental action.
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setSosFilter(true);
+                setStatusFilter("");
+              }}
+              className="bg-white text-red-700 font-extrabold px-3.5 py-1.5 rounded-xl text-xs hover:bg-red-50 transition-colors shadow"
+            >
+              View SOS Only
+            </button>
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+          <h1 className="font-display text-xl sm:text-2xl font-bold">
+            {user.role === "admin"
+              ? "🏛️ Admin Portal — All Departments"
+              : `📋 ${user.department?.name || "Department"} Dashboard`}
+          </h1>
+          {user.role === "admin" && (
+            <span className="bg-amber-100 text-amber-900 text-xs font-bold px-3 py-1 rounded-full w-fit">
+              Master Admin Mode
+            </span>
+          )}
+        </div>
 
         {stats && (
-          <div className="flex flex-wrap gap-4 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
             <StatCard label="Total" value={stats.total} />
             <StatCard label="Pending" value={stats.pending} accent="pending" />
             <StatCard label="In Progress" value={stats.inProgress} accent="progress" />
@@ -102,105 +144,155 @@ export default function DepartmentDashboard() {
         )}
 
         {user.role === "admin" && stats?.byDepartment?.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
-            <h3 className="font-semibold text-sm mb-3">By department</h3>
-            {stats.byDepartment.map((d) => {
-              const maxCount = Math.max(...stats.byDepartment.map((x) => x.count), 1);
-              const pct = Math.round((d.count / maxCount) * 100);
-              return (
-                <div key={d.department} className="flex items-center gap-3 mb-2 text-sm">
-                  <div className="w-48 shrink-0 text-gray-600 truncate">{d.department}</div>
-                  <div className="flex-1 bg-gray-100 rounded h-3.5 overflow-hidden">
-                    <div className="bg-teal h-full rounded transition-all" style={{ width: `${pct}%` }} />
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+            <h3 className="font-bold text-sm text-gray-700 uppercase tracking-wider mb-3">Complaints By Department</h3>
+            <div className="space-y-2">
+              {stats.byDepartment.map((d) => {
+                const maxCount = Math.max(...stats.byDepartment.map((x) => x.count), 1);
+                const pct = Math.round((d.count / maxCount) * 100);
+                return (
+                  <div key={d.department} className="flex items-center gap-3 text-xs sm:text-sm">
+                    <div className="w-44 sm:w-56 shrink-0 text-gray-700 font-medium truncate">{d.department}</div>
+                    <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
+                      <div className="bg-teal h-full rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="w-8 text-right font-bold text-ink">{d.count}</div>
                   </div>
-                  <div className="w-8 text-right font-bold">{d.count}</div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
 
-        <div className="flex items-center gap-3 mb-4">
-          <label className="text-sm">
-            Status:{" "}
+        {/* Filter Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 bg-white p-3 rounded-2xl border border-gray-100">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => setSosFilter(!sosFilter)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                sosFilter
+                  ? "bg-red-600 text-white shadow-md shadow-red-600/30"
+                  : "bg-red-50 text-red-700 hover:bg-red-100 border border-red-200"
+              }`}
+            >
+              <span>🚨</span>
+              <span>{sosFilter ? "Showing SOS Only" : "Filter SOS Emergencies"}</span>
+            </button>
+
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-line rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-marigold"
+              className="border border-line rounded-xl px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-marigold"
             >
-              <option value="">All</option>
+              <option value="">All Statuses</option>
               <option value="Pending">Pending</option>
               <option value="In Progress">In Progress</option>
               <option value="Resolved">Resolved</option>
             </select>
-          </label>
+          </div>
+
           <button
             onClick={loadData}
             disabled={loading}
-            className="bg-ink text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-ink-soft disabled:opacity-60"
+            className="bg-ink text-white px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-ink-soft disabled:opacity-60 transition-colors shadow-sm"
           >
-            {loading ? "Loading..." : "Refresh"}
+            {loading ? "Loading..." : "🔄 Refresh"}
           </button>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
+        {/* Complaints Table */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+          <table className="w-full text-xs sm:text-sm">
             <thead>
-              <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                <th className="px-3 py-3">ID</th>
-                <th className="px-3 py-3">Photo</th>
-                {user.role === "admin" && <th className="px-3 py-3">Department</th>}
-                <th className="px-3 py-3">Description</th>
-                <th className="px-3 py-3">Location</th>
-                <th className="px-3 py-3">Reported by</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3">Proof of fix</th>
-                <th className="px-3 py-3">Filed on</th>
-                {user.role !== "admin" && <th className="px-3 py-3">Update</th>}
+              <tr className="bg-gray-50 text-left text-[11px] uppercase tracking-wider text-gray-500 font-bold border-b border-gray-100">
+                <th className="px-3 py-3.5">ID / Type</th>
+                <th className="px-3 py-3.5">Photo & Audio</th>
+                {user.role === "admin" && <th className="px-3 py-3.5">Department</th>}
+                <th className="px-3 py-3.5">Description</th>
+                <th className="px-3 py-3.5">Location</th>
+                <th className="px-3 py-3.5">Citizen</th>
+                <th className="px-3 py-3.5">Status</th>
+                <th className="px-3 py-3.5">Proof of fix</th>
+                <th className="px-3 py-3.5">Filed</th>
+                {user.role !== "admin" && <th className="px-3 py-3.5">Action</th>}
               </tr>
             </thead>
             <tbody>
               {complaints.map((c) => (
-                <tr key={c._id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-3 font-mono font-semibold">{c.complaintId}</td>
-                  <td className="px-3 py-3">
-                    {c.photoUrl ? (
-                      <a href={getImageUrl(c.photoUrl)} target="_blank" rel="noreferrer">
-                        <img
-                          src={getImageUrl(c.photoUrl)}
-                          alt="Complaint photo"
-                          onError={(e) => { e.target.style.display = "none"; }}
-                          className="w-11 h-11 object-cover rounded-md border border-gray-200"
-                        />
-                      </a>
-                    ) : (
-                      "—"
+                <tr
+                  key={c._id}
+                  className={`border-t border-gray-100 hover:bg-gray-50/80 transition-colors ${
+                    c.isSOS ? "bg-red-50/40" : ""
+                  }`}
+                >
+                  <td className="px-3 py-3 font-mono">
+                    <div className="font-bold text-ink">{c.complaintId}</div>
+                    {c.isSOS && (
+                      <span className="inline-block bg-red-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full mt-1 animate-pulse">
+                        🚨 SOS
+                      </span>
                     )}
                   </td>
-                  {user.role === "admin" && <td className="px-3 py-3">{c.department?.name || "—"}</td>}
-                  <td className="px-3 py-3 max-w-[220px]">{c.description}</td>
+
+                  <td className="px-3 py-3">
+                    <div className="flex flex-col gap-1.5 items-start">
+                      {c.photoUrl ? (
+                        <a href={getImageUrl(c.photoUrl)} target="_blank" rel="noreferrer">
+                          <img
+                            src={getImageUrl(c.photoUrl)}
+                            alt="Photo"
+                            onError={(e) => { e.target.style.display = "none"; }}
+                            className="w-12 h-12 object-cover rounded-lg border border-gray-200 hover:scale-105 transition-transform"
+                          />
+                        </a>
+                      ) : (
+                        <span className="text-gray-400 text-xs">—</span>
+                      )}
+                      {c.audioUrl && (
+                        <audio
+                          src={getImageUrl(c.audioUrl)}
+                          controls
+                          className="h-6 w-28 max-w-full"
+                          title="Citizen Voice Note"
+                        />
+                      )}
+                    </div>
+                  </td>
+
+                  {user.role === "admin" && (
+                    <td className="px-3 py-3 font-semibold text-gray-700">
+                      {c.department?.name || "—"}
+                    </td>
+                  )}
+
+                  <td className="px-3 py-3 max-w-[200px] text-gray-800">
+                    <p className="line-clamp-3">{c.description}</p>
+                  </td>
+
                   <td className="px-3 py-3">
                     {c.location?.lat ? (
                       <a
                         href={`https://www.google.com/maps?q=${c.location.lat},${c.location.lng}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-teal font-semibold hover:underline"
+                        className="inline-flex items-center gap-1 text-teal font-bold hover:underline"
                       >
                         📍 Map
                       </a>
                     ) : (
-                      c.location?.address || "—"
+                      <span className="text-gray-600">{c.location?.address || "—"}</span>
                     )}
                   </td>
+
                   <td className="px-3 py-3">
-                    {c.citizenName || "Anonymous"}
-                    <br />
-                    <span className="text-gray-400 text-xs">{c.phone}</span>
+                    <div className="font-semibold text-gray-800">{c.citizenName || "Anonymous"}</div>
+                    <div className="text-gray-400 text-xs font-mono">{c.phone}</div>
                   </td>
+
                   <td className="px-3 py-3">
                     <StatusBadge status={c.status} />
                   </td>
+
                   <td className="px-3 py-3">
                     {c.status === "Resolved" ? (
                       c.resolutionPhotoUrl ? (
@@ -210,25 +302,29 @@ export default function DepartmentDashboard() {
                               src={getImageUrl(c.resolutionPhotoUrl)}
                               alt="Proof"
                               onError={(e) => { e.target.style.display = "none"; }}
-                              className="w-11 h-11 object-cover rounded-md mx-auto border border-gray-200"
+                              className="w-11 h-11 object-cover rounded-lg mx-auto border-2 border-emerald-400"
                             />
                           </a>
-                          <span className="text-[10px] text-gray-400">by {c.resolvedBy || "staff"}</span>
+                          <span className="text-[10px] text-gray-400 block mt-0.5">by {c.resolvedBy || "staff"}</span>
                         </div>
                       ) : (
-                        <span className="text-gray-400 text-xs">No proof on file</span>
+                        <span className="text-gray-400 text-xs">No proof</span>
                       )
                     ) : (
                       "—"
                     )}
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap">{new Date(c.createdAt).toLocaleString()}</td>
+
+                  <td className="px-3 py-3 whitespace-nowrap text-xs text-gray-500">
+                    {new Date(c.createdAt).toLocaleDateString()}
+                  </td>
+
                   {user.role !== "admin" && (
                     <td className="px-3 py-3">
                       <select
                         value={c.status}
                         onChange={(e) => handleStatusChange(c._id, e.target.value)}
-                        className="border border-line rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-marigold"
+                        className="border border-line rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none focus:border-marigold"
                       >
                         <option value="Pending">Pending</option>
                         <option value="In Progress">In Progress</option>
@@ -242,9 +338,9 @@ export default function DepartmentDashboard() {
           </table>
 
           {!loading && complaints.length === 0 && (
-            <div className="text-center py-14 text-gray-400">
-              <div className="text-3xl mb-2">📭</div>
-              No complaints match this filter yet.
+            <div className="text-center py-16 text-gray-400">
+              <div className="text-4xl mb-2">📭</div>
+              <div className="font-semibold">No complaints found.</div>
             </div>
           )}
         </div>
@@ -255,11 +351,12 @@ export default function DepartmentDashboard() {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-ink text-white px-4 py-3 rounded-xl shadow-xl text-sm z-50 animate-bounce">
+        <div className="fixed bottom-6 right-6 bg-ink text-white px-5 py-3 rounded-2xl shadow-2xl text-sm z-50 animate-bounce font-medium">
           {toast}
         </div>
       )}
     </div>
   );
 }
+
 

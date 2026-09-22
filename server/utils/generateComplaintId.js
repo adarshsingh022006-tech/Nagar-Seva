@@ -1,15 +1,16 @@
 // utils/generateComplaintId.js
-// Produces a human-friendly, sortable ID like CMP-20260829-0001
+// Produces a human-friendly, sortable ID like CMP-20260829-0001 or SOS-20260829-0001
 
 const Complaint = require("../models/Complaint");
 
-async function generateComplaintId() {
+async function generateComplaintId(isSOS = false) {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
   const datePart = `${y}${m}${d}`;
-  const prefix = `CMP-${datePart}-`;
+  const tag = isSOS ? "SOS" : "CMP";
+  const prefix = `${tag}-${datePart}-`;
 
   // Find the latest complaint created today with this prefix
   const latest = await Complaint.findOne({
@@ -30,4 +31,5 @@ async function generateComplaintId() {
 }
 
 module.exports = generateComplaintId;
+
 
