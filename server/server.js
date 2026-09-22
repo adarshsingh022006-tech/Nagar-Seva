@@ -102,6 +102,25 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// Root welcome & API info endpoint
+app.get("/", (req, res, next) => {
+  const clientDistPath = path.join(__dirname, "../client/dist");
+  if (fs.existsSync(clientDistPath)) {
+    return res.sendFile(path.join(clientDistPath, "index.html"));
+  }
+  res.json({
+    message: "🏛️ Nagar Seva API is online and running!",
+    status: "healthy",
+    docs: {
+      health: "/api/health",
+      complaints: "/api/complaints",
+      departments: "/api/departments",
+      auth: "/api/auth/login",
+    },
+  });
+});
+
+
 // Mount API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/complaints", complaintRoutes);
