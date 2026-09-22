@@ -1,4 +1,5 @@
 // controllers/complaintController.js
+const mongoose = require("mongoose");
 const Complaint = require("../models/Complaint");
 const Department = require("../models/Department");
 const generateComplaintId = require("../utils/generateComplaintId");
@@ -17,6 +18,18 @@ const CATEGORY_DEPARTMENT_MAP = {
 function fileUrl(req, filename) {
   if (!filename) return null;
   return `/uploads/${filename}`;
+}
+
+function findComplaintByIdOrCode(idOrCode) {
+  if (!idOrCode) return Promise.resolve(null);
+  const str = String(idOrCode).trim();
+  const isObjectId = mongoose.Types.ObjectId.isValid(str);
+  if (isObjectId) {
+    return Complaint.findOne({
+      $or: [{ _id: str }, { complaintId: str.toUpperCase() }],
+    });
+  }
+  return Complaint.findOne({ complaintId: str.toUpperCase() });
 }
 
 // POST /api/complaints  (public, multipart/form-data)
@@ -297,9 +310,7 @@ async function rateComplaint(req, res, next) {
       return res.status(400).json({ message: "Stars rating (1 to 5) is required." });
     }
 
-    const complaint = await Complaint.findOne({
-      $or: [{ _id: req.params.id }, { complaintId: req.params.id.toUpperCase() }],
-    });
+    const complaint = await findComplaintByIdOrCode(req.params.id);
 
     if (!complaint) return res.status(404).json({ message: "Complaint not found." });
     if (complaint.status !== "Resolved") {
@@ -327,9 +338,7 @@ async function reopenComplaint(req, res, next) {
       return res.status(400).json({ message: "Please provide a reason why this complaint should be re-opened." });
     }
 
-    const complaint = await Complaint.findOne({
-      $or: [{ _id: req.params.id }, { complaintId: req.params.id.toUpperCase() }],
-    });
+    const complaint = await findComplaintByIdOrCode(req.params.id);
 
     if (!complaint) return res.status(404).json({ message: "Complaint not found." });
 
@@ -437,6 +446,101 @@ async function getLeaderboard(req, res, next) {
   }
 }
 
+// GET /api/complaints/public-feed (public community feed with upvotes & before/after showcase)
+async function getPublicFeed(req, res, next) {
+  try {
+    const { tab = "all", category, search, page = 1, limit = 20 } = req.query;
+    const filter = {};
+
+    if (category && category !== "All") {
+      filter.category = category;
+    }
+
+    if (tab === "resolved") {
+      filter.status = "Resolved";
+    } else if (tab === "emergency") {
+      filter.isSOS = true;
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim();
+      filter.$or = [
+        { complaintId: { $regex: q, $options: "i" } },
+        { description: { $regex: q, $options: "i" } },
+        { "location.address": { $regex: q, $options: "i" } },
+      ];
+    }
+
+    let sort = { createdAt: -1 };
+    if (tab === "trending") {
+      sort = { upvotes: -1, duplicateCount: -1, createdAt: -1 };
+    } else if (tab === "resolved") {
+      sort = { resolvedAt: -1, createdAt: -1 };
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const [complaints, totalCount] = await Promise.all([
+      Complaint.find(filter)
+        .populate("department", "name")
+        .sort(sort)
+        .skip(skip)
+        .limit(Number(limit)),
+      Complaint.countDocuments(filter),
+    ]);
+
+    res.json({
+      complaints,
+      pagination: {
+        total: totalCount,
+        page: Number(page),
+        pages: Math.ceil(totalCount / Number(limit)) || 1,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/complaints/:id/upvote (Community 'Affected Too / +1' Upvoting)
+async function upvoteComplaint(req, res, next) {
+  try {
+    const { voterId } = req.body;
+    const complaint = await findComplaintByIdOrCode(req.params.id);
+
+    if (!complaint) return res.status(404).json({ message: "Complaint not found." });
+
+    const voterKey = voterId?.trim() || req.ip || "anon_citizen";
+    const hasUpvoted = complaint.upvoters && complaint.upvoters.includes(voterKey);
+
+    if (hasUpvoted) {
+      // Toggle off upvote
+      complaint.upvoters = complaint.upvoters.filter((v) => v !== voterKey);
+      complaint.upvotes = Math.max(0, (complaint.upvotes || 1) - 1);
+    } else {
+      // Add upvote
+      if (!complaint.upvoters) complaint.upvoters = [];
+      complaint.upvoters.push(voterKey);
+      complaint.upvotes = (complaint.upvotes || 0) + 1;
+
+      // Auto-escalate priority to High if >= 5 neighbors upvote
+      if (complaint.upvotes >= 5 && complaint.priority === "Normal") {
+        complaint.priority = "High";
+      }
+    }
+
+    await complaint.save();
+
+    res.json({
+      message: hasUpvoted ? "Upvote removed" : "Community upvote recorded! (+1 Me Too)",
+      upvotes: complaint.upvotes,
+      hasUpvoted: !hasUpvoted,
+      priority: complaint.priority,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // GET /api/complaints/stats  (protected)
 async function getStats(req, res, next) {
   try {
@@ -481,6 +585,8 @@ module.exports = {
   reopenComplaint,
   getComplaintsByPhone,
   getLeaderboard,
+  getPublicFeed,
+  upvoteComplaint,
   getStats,
   CATEGORY_DEPARTMENT_MAP,
 };

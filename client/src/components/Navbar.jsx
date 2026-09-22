@@ -52,6 +52,16 @@ export default function Navbar() {
             <span className="font-extrabold tracking-wide uppercase">{t("sosButton", "SOS")}</span>
           </button>
 
+          {/* Nagar Feed Button */}
+          <Link
+            to="/feed"
+            className="inline-flex items-center gap-1 bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/40 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors"
+            title="Community Civic Feed"
+          >
+            <span>📰</span>
+            <span>Nagar Feed</span>
+          </Link>
+
           {/* Leaderboard Button */}
           <button
             onClick={() => setIsLeaderboardOpen(true)}

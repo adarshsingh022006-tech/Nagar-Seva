@@ -13,12 +13,16 @@ const {
   reopenComplaint,
   getComplaintsByPhone,
   getLeaderboard,
+  getPublicFeed,
+  upvoteComplaint,
   getStats,
 } = require("../controllers/complaintController");
 
 // ---- Public (citizen-facing) ----
 router.post("/", complaintUpload, createComplaint);
+router.get("/public-feed", getPublicFeed);
 router.get("/track/:complaintId", trackComplaint);
+router.post("/:id/upvote", upvoteComplaint);
 router.post("/:id/rate", rateComplaint);
 router.post("/:id/reopen", reopenComplaint);
 router.get("/by-phone/:phone", getComplaintsByPhone);

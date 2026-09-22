@@ -270,6 +270,23 @@ export default function Home() {
         <p className="text-gray-300 text-sm sm:text-base max-w-xl mx-auto">
           {t("heroSubtitle", "Add a photo or voice note and your location, and we'll route it straight to the right department.")}
         </p>
+
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+          <Link
+            to="/feed"
+            className="bg-amber-400 hover:bg-yellow-400 text-ink font-extrabold px-5 py-2.5 rounded-2xl text-xs sm:text-sm flex items-center gap-2 shadow-lg transition-transform active:scale-95"
+          >
+            <span>📰</span>
+            <span>Explore Live Nagar Feed & Upvote (+1)</span>
+          </Link>
+          <Link
+            to="/track"
+            className="bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-2xl text-xs sm:text-sm border border-white/20 transition-colors"
+          >
+            <span>🔍</span>
+            <span>Track Existing Complaint</span>
+          </Link>
+        </div>
       </section>
 
       <div className="max-w-2xl mx-auto px-4 -mt-8 pb-16">

@@ -96,6 +96,13 @@ export const fetchComplaintsByPhone = (phone) =>
 export const fetchLeaderboard = () =>
   api.get("/complaints/leaderboard").then((r) => r.data);
 
+// ---- Nagar Feed & Community Upvoting ----
+export const fetchPublicFeed = (params = {}) =>
+  api.get("/complaints/public-feed", { params }).then((r) => r.data);
+
+export const upvoteComplaint = (id, voterId) =>
+  api.post(`/complaints/${encodeURIComponent(id)}/upvote`, { voterId }).then((r) => r.data);
+
 // ---- Announcements ----
 export const fetchAnnouncements = () =>
   api.get("/announcements").then((r) => r.data);

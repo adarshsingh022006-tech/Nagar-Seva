@@ -39,6 +39,10 @@ const complaintSchema = new mongoose.Schema(
     duplicateCount: { type: Number, default: 1 },
     additionalReports: [additionalReportSchema],
 
+    // Community Nagar Feed Upvotes ("Me Too / Affected Too +1")
+    upvotes: { type: Number, default: 0 },
+    upvoters: [{ type: String }], // Unique voter tokens / IPs / phones to prevent multi-voting
+
     isSOS: { type: Boolean, default: false }, // Emergency SOS flag
     priority: {
       type: String,
