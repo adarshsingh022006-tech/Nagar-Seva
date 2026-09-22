@@ -18,6 +18,7 @@ const app = express();
 app.set("trust proxy", 1);
 
 const User = require("./models/User");
+const Department = require("./models/Department");
 
 // Auto-seed default departments, demo accounts, and initial announcement
 const DEFAULT_DEPARTMENTS = [

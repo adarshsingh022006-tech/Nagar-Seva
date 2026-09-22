@@ -183,6 +183,112 @@ async function createComplaint(req, res, next) {
   }
 }
 
+// GET /api/complaints/track/:complaintId (public)
+async function trackComplaint(req, res, next) {
+  try {
+    const { complaintId } = req.params;
+    const complaint = await Complaint.findOne({
+      complaintId: complaintId.trim().toUpperCase(),
+    }).populate("department", "name");
+
+    if (!complaint) {
+      return res.status(404).json({ message: "No complaint found with that ID." });
+    }
+
+    res.json(complaint);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/complaints  (protected — staff sees own dept, admin sees all)
+async function listComplaints(req, res, next) {
+  try {
+    const filter = {};
+
+    if (req.user.role !== "admin") {
+      filter.department = req.user.department?._id || req.user.department;
+    } else if (req.query.department) {
+      filter.department = req.query.department;
+    }
+
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.category) filter.category = req.query.category;
+    if (req.query.isSOS !== undefined) filter.isSOS = req.query.isSOS === "true";
+    if (req.query.priority) filter.priority = req.query.priority;
+    if (req.query.piledOnly === "true") filter.duplicateCount = { $gt: 1 };
+
+    const complaints = await Complaint.find(filter)
+      .populate("department", "name")
+      .sort({ isSOS: -1, duplicateCount: -1, createdAt: -1 });
+    res.json(complaints);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PATCH /api/complaints/:id/status  (protected — Pending / In Progress only)
+async function updateStatus(req, res, next) {
+  try {
+    const { status } = req.body;
+    const allowed = ["Pending", "In Progress"];
+
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        message: 'Use this endpoint only for "Pending" or "In Progress". For "Resolved", use /resolve with a proof photo.',
+      });
+    }
+
+    const complaint = await Complaint.findById(req.params.id);
+    if (!complaint) return res.status(404).json({ message: "Complaint not found." });
+
+    if (
+      req.user.role !== "admin" &&
+      complaint.department.toString() !== (req.user.department?._id || req.user.department).toString()
+    ) {
+      return res.status(403).json({ message: "Access denied. Not your department." });
+    }
+
+    complaint.status = status;
+    await complaint.save();
+
+    res.json({ message: `Status updated to ${status}`, complaint });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PATCH /api/complaints/:id/resolve  (protected — multipart/form-data with proof photo)
+async function resolveComplaint(req, res, next) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        message: "A resolution proof photo is required to mark a complaint as Resolved.",
+      });
+    }
+
+    const complaint = await Complaint.findById(req.params.id);
+    if (!complaint) return res.status(404).json({ message: "Complaint not found." });
+
+    if (
+      req.user.role !== "admin" &&
+      complaint.department.toString() !== (req.user.department?._id || req.user.department).toString()
+    ) {
+      return res.status(403).json({ message: "Access denied. Not your department." });
+    }
+
+    complaint.status = "Resolved";
+    complaint.resolutionPhotoUrl = fileUrl(req, req.file.filename);
+    complaint.resolvedAt = new Date();
+    complaint.resolvedBy = req.user.username;
+    await complaint.save();
+
+    res.json({ message: "Complaint marked as Resolved with proof photo.", complaint });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // POST /api/complaints/:id/rate (public citizen rating on resolved complaint)
 async function rateComplaint(req, res, next) {
   try {
@@ -331,6 +437,40 @@ async function getLeaderboard(req, res, next) {
   }
 }
 
+// GET /api/complaints/stats  (protected)
+async function getStats(req, res, next) {
+  try {
+    const filter = {};
+    if (req.user.role !== "admin") {
+      filter.department = req.user.department?._id || req.user.department;
+    }
+
+    const [total, pending, inProgress, resolved, emergencyCount, piledCount] = await Promise.all([
+      Complaint.countDocuments(filter),
+      Complaint.countDocuments({ ...filter, status: "Pending" }),
+      Complaint.countDocuments({ ...filter, status: "In Progress" }),
+      Complaint.countDocuments({ ...filter, status: "Resolved" }),
+      Complaint.countDocuments({ ...filter, isSOS: true, status: { $ne: "Resolved" } }),
+      Complaint.countDocuments({ ...filter, duplicateCount: { $gt: 1 }, status: { $ne: "Resolved" } }),
+    ]);
+
+    let byDepartment = [];
+    if (req.user.role === "admin") {
+      byDepartment = await Complaint.aggregate([
+        { $group: { _id: "$department", count: { $sum: 1 } } },
+        { $lookup: { from: "departments", localField: "_id", foreignField: "_id", as: "dept" } },
+        { $unwind: "$dept" },
+        { $project: { _id: 0, department: "$dept.name", count: 1 } },
+        { $sort: { count: -1 } },
+      ]);
+    }
+
+    res.json({ total, pending, inProgress, resolved, emergencyCount, piledCount, byDepartment });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createComplaint,
   trackComplaint,
@@ -344,6 +484,3 @@ module.exports = {
   getStats,
   CATEGORY_DEPARTMENT_MAP,
 };
-
-
-
